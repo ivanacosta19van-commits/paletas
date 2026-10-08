@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockPro Cloud - Control de Inventarios y Ventas</title>
+    
+    <!-- Tailwind CSS para diseño y estilos adaptativos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js para gráficos e indicadores interactivos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- FontAwesome para iconografía -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Alpine.js para reactividad y control del estado -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN 1: ESTILOS Y CONFIGURACIÓN VISUAL (CSS Y TAILWIND)    -->
+    <!-- ============================================================== -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-100 flex flex-col bg-slate-900 custom-scroll" x-data="inventoryApp()" x-init="initFirebaseApp()">
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN 2: ESTRUCTURA VISUAL DE LA INTERFAZ Y PESTAÑAS (HTML)  -->
+    <!-- ============================================================== -->
+
+    <!-- Notificaciones Flotantes (Toasts) -->
+    <div class="fixed top-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div x-show="toast.show" 
+                 x-transition:enter="transition ease-out duration-300 transform"
+                 x-transition:enter-start="opacity-0 translate-y-2 scale-95"
+                 x-transition:enter-end="opacity-100 translate-y-0 scale-100"
+                 x-transition:leave="transition ease-in duration-200 transform"
+                 x-transition:leave-start="opacity-100 scale-100"
+                 x-transition:leave-end="opacity-0 scale-90"
+                 class="pointer-events-auto flex items-center p-4 rounded-xl shadow-2xl border text-sm font-medium space-x-3 min-w-[300px]"
+                 :class="{
+                    'bg-emerald-950/90 text-emerald-200 border-emerald-800/80 backdrop-blur-md': toast.type === 'success',
+                    'bg-rose-950/90 text-rose-200 border-rose-800/80 backdrop-blur-md': toast.type === 'danger',
+                    'bg-amber-950/90 text-amber-200 border-amber-800/80 backdrop-blur-md': toast.type === 'warning',
+                    'bg-slate-800/95 text-slate-200 border-slate-700 backdrop-blur-md': toast.type === 'info'
+                 }">
+                <i class="text-xl" :class="{
+                    'fa-solid fa-circle-check text-emerald-400': toast.type === 'success',
+                    'fa-solid fa-circle-xmark text-rose-400': toast.type === 'danger',
+                    'fa-solid fa-triangle-exclamation text-amber-400': toast.type === 'warning',
+                    'fa-solid fa-circle-info text-sky-400': toast.type === 'info'
+                }"></i>
+                <span x-text="toast.message" class="flex-1"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- Barra de Navegación Principal -->
+    <header class="bg-slate-950/80 border-b border-slate-800 backdrop-blur-xl sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logotipo de la App -->
+                <div class="flex items-center space-x-3 cursor-pointer" @click="currentTab = 'dashboard'">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+                        <i class="fa-solid fa-boxes-stacked text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-emerald-400 bg-clip-text text-transparent">StockPro Cloud</span>
+                        <span class="text-[10px] block text-emerald-400 font-semibold uppercase tracking-wider">Inventario & Ventas</span>
+                    </div>
+                </div>
+
+                <!-- Menú de Pestañas (Escritorio) -->
+                <nav class="hidden md:flex space-x-1">
+                    <button @click="currentTab = 'dashboard'" 
+                            :class="currentTab === 'dashboard' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50' : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border-transparent'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-pie"></i>
+                        <span>Dashboard</span>
+                    </button>
+                    <button @click="currentTab = 'inventory'" 
+                            :class="currentTab === 'inventory' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50' : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border-transparent'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center space-x-2">
+                        <i class="fa-solid fa-boxes-packing"></i>
+                        <span>Inventario</span>
+                    </button>
+                    <button @click="currentTab = 'sales'" 
+                            :class="currentTab === 'sales' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50' : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border-transparent'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center space-x-2">
+                        <i class="fa-solid fa-cash-register"></i>
+                        <span>Vender</span>
+                    </button>
+                    <button @click="currentTab = 'history'" 
+                            :class="currentTab === 'history' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50' : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border-transparent'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center space-x-2">
+                        <i class="fa-solid fa-receipt"></i>
+                        <span>Historial</span>
+                    </button>
+                    <button @click="currentTab = 'reports'" 
+                            :class="currentTab === 'reports' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50' : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border-transparent'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>Reportes</span>
+                    </button>
+                </nav>
+
+                <!-- Estado de Conexión a la Nube -->
+                <div class="flex items-center space-x-3">
+                    <div class="flex items-center space-x-3 bg-slate-900/80 border border-slate-800 p-1.5 px-3 rounded-xl">
+                        <div class="text-right hidden sm:block">
+                            <p class="text-xs font-bold text-slate-200">Sincronización Nube</p>
+                            <p class="text-[10px] text-emerald-400 flex items-center justify-end space-x-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span>Conectado a Firebase</span>
+                            </p>
+                        </div>
+                        <i class="fa-solid fa-cloud text-emerald-400 text-lg"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Menú Inferior para Móviles -->
+        <div class="md:hidden flex justify-around bg-slate-950 border-t border-slate-800/80 px-2 py-2 text-slate-400 text-xs overflow-x-auto">
+            <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'text-emerald-400 font-bold bg-slate-900' : ''" class="flex flex-col items-center py-1.5 px-3 rounded-lg shrink-0">
+                <i class="fa-solid fa-chart-pie mb-1"></i>
+                <span>Inicio</span>
+            </button>
+            <button @click="currentTab = 'inventory'" :class="currentTab === 'inventory' ? 'text-emerald-400 font-bold bg-slate-900' : ''" class="flex flex-col items-center py-1.5 px-3 rounded-lg shrink-0">
+                <i class="fa-solid fa-boxes-packing mb-1"></i>
+                <span>Stock</span>
+            </button>
+            <button @click="currentTab = 'sales'" :class="currentTab === 'sales' ? 'text-emerald-400 font-bold bg-slate-900' : ''" class="flex flex-col items-center py-1.5 px-3 rounded-lg shrink-0">
+                <i class="fa-solid fa-cash-register mb-1"></i>
+                <span>Vender</span>
+            </button>
+            <button @click="currentTab = 'history'" :class="currentTab === 'history' ? 'text-emerald-400 font-bold bg-slate-900' : ''" class="flex flex-col items-center py-1.5 px-3 rounded-lg shrink-0">
+                <i class="fa-solid fa-receipt mb-1"></i>
+                <span>Historial</span>
+            </button>
+            <button @click="currentTab = 'reports'" :class="currentTab === 'reports' ? 'text-emerald-400 font-bold bg-slate-900' : ''" class="flex flex-col items-center py-1.5 px-3 rounded-lg shrink-0">
+                <i class="fa-solid fa-chart-line mb-1"></i>
+                <span>Reportes</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal de la App -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Banner de Alerta de Stock Bajo -->
+        <div x-show="lowStockProducts.length > 0" x-cloak class="bg-amber-950/40 border border-amber-800/60 p-4 rounded-2xl flex items-center justify-between text-amber-200">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-sm">Alerta de Existencias Bajas</h4>
+                    <p class="text-xs text-amber-300/80">Hay <span class="font-bold text-amber-200" x-text="lowStockProducts.length"></span> producto(s) por debajo del mínimo.</p>
+                </div>
+            </div>
+            <button @click="currentTab = 'inventory'; filterLowStock = true" class="text-xs bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1.5 rounded-xl transition shrink-0">
+                Ver lista
+            </button>
+        </div>
+
+        <!-- ==================== PESTAÑA 1: DASHBOARD ==================== -->
+        <div x-show="currentTab === 'dashboard'" x-cloak class="space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                    <h1 class="text-2xl font-extrabold text-white tracking-tight">Panel General</h1>
+                    <p class="text-xs text-slate-400">Resumen de inversión, valor de ventas e indicadores en tiempo real</p>
+                </div>
+                <button @click="openModalProduct()" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-lg shadow-emerald-900/30 flex items-center space-x-2 self-start sm:self-auto transition">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Nuevo Producto</span>
+                </button>
+            </div>
+
+            <!-- Tarjetas de KPIs principales -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- KPI 1: Inversión en Stock -->
+                <div class="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl backdrop-blur-sm relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Invertido</p>
+                            <h3 class="text-2xl font-black text-white mt-1" x-text="formatCurrency(totalInvestment)"></h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center">
+                            <i class="fa-solid fa-boxes-stacked text-lg"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2">Costo total de mercancía almacenada</p>
+                </div>
+
+                <!-- KPI 2: Valor Estimado de Venta -->
+                <div class="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl backdrop-blur-sm relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Valor en Ventas</p>
+                            <h3 class="text-2xl font-black text-emerald-400 mt-1" x-text="formatCurrency(totalStockValue)"></h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+                            <i class="fa-solid fa-chart-line text-lg"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2">Retorno esperado si vendes todo el stock</p>
+                </div>
+
+                <!-- KPI 3: Ganancia Realizada -->
+                <div class="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl backdrop-blur-sm relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ganancia Realizada</p>
+                            <h3 class="text-2xl font-black text-teal-300 mt-1" x-text="formatCurrency(totalRealizedProfit)"></h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center justify-center">
+                            <i class="fa-solid fa-sack-dollar text-lg"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2">Ganancia neta generada en ventas</p>
+                </div>
+
+                <!-- KPI 4: Total Productos -->
+                <div class="bg-slate-800/60 border border-slate-700/60 p-5 rounded-2xl backdrop-blur-sm relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total Productos</p>
+                            <h3 class="text-2xl font-black text-indigo-400 mt-1" x-text="products.length"></h3>
+                        </div>
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center">
+                            <i class="fa-solid fa-tags text-lg"></i>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2" x-text="lowStockProducts.length + ' con alerta de stock bajo'"></p>
+                </div>
+            </div>
+
+            <!-- Gráficos del Dashboard -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-slate-800/40 border border-slate-800 p-5 rounded-2xl">
+                    <h3 class="text-sm font-bold text-slate-200 mb-4 flex items-center space-x-2">
+                        <i class="fa-solid fa-chart-column text-emerald-400"></i>
+                        <span>Ingresos vs Ganancias (Últimas Ventas)</span>
+                    </h3>
+                    <div class="h-64 relative">
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800/40 border border-slate-800 p-5 rounded-2xl">
+                    <h3 class="text-sm font-bold text-slate-200 mb-4 flex items-center space-x-2">
+                        <i class="fa-solid fa-pie-chart text-teal-400"></i>
+                        <span>Categorías de Stock</span>
+                    </h3>
+                    <div class="h-64 relative flex items-center justify-center">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PESTAÑA 2: INVENTARIO ==================== -->
+        <div x-show="currentTab === 'inventory'" x-cloak class="space-y-4">
+            <!-- Filtros y Búsqueda -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800/40 p-4 rounded-2xl border border-slate-800">
+                <div class="flex-1 flex flex-col sm:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+                        <input type="text" x-model="searchQuery" placeholder="Buscar por producto o categoría..." 
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+
+                    <button @click="filterLowStock = !filterLowStock" 
+                            :class="filterLowStock ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-slate-900 border-slate-700/80 text-slate-400'"
+                            class="px-3.5 py-2 rounded-xl text-xs font-semibold border transition flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-filter text-xs"></i>
+                        <span>Solo Stock Bajo</span>
+                    </button>
+                </div>
+
+                <button @click="openModalProduct()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition flex items-center justify-center space-x-2 shrink-0">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Agregar Producto</span>
+                </button>
+            </div>
+
+            <!-- Tabla de Inventario con División Pieza vs Caja -->
+            <div class="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden">
+                <div class="overflow-x-auto custom-scroll">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                            <tr>
+                                <th class="py-3.5 px-4 font-bold">Producto</th>
+                                <th class="py-3.5 px-4 font-bold">Modo Venta</th>
+                                <th class="py-3.5 px-4 font-bold">Costo Compra</th>
+                                <th class="py-3.5 px-4 font-bold">Precio Venta</th>
+                                <th class="py-3.5 px-4 font-bold">Ganancia / Margen</th>
+                                <th class="py-3.5 px-4 font-bold">Stock</th>
+                                <th class="py-3.5 px-4 font-bold text-right">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <template x-for="product in filteredProducts" :key="product.id">
+                                <tr class="hover:bg-slate-800/50 transition">
+                                    <td class="py-3.5 px-4">
+                                        <div class="font-bold text-white text-sm" x-text="product.name"></div>
+                                        <div class="text-[10px] text-slate-500" x-text="product.category || 'General'"></div>
+                                    </td>
+                                    <td class="py-3.5 px-4">
+                                        <span class="px-2 py-0.5 rounded-md text-[10px] font-bold" 
+                                              :class="product.unitType === 'caja' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/50 text-slate-300'">
+                                            <i class="fa-solid" :class="product.unitType === 'caja' ? 'fa-box-open' : 'fa-cubes'"></i>
+                                            <span x-text="product.unitType === 'caja' ? 'Caja (' + product.itemsPerBox + ' pcs)' : 'Pieza'"></span>
+                                        </span>
+                                    </td>
+                                    <td class="py-3.5 px-4 font-mono">
+                                        <span x-text="formatCurrency(product.buyPrice)"></span>
+                                        <div x-show="product.unitType === 'caja'" class="text-[10px] text-slate-500">
+                                            <span x-text="formatCurrency(product.buyPrice / (product.itemsPerBox || 1)) + '/pc'"></span>
+                                        </div>
+                                    </td>
+                                    <td class="py-3.5 px-4 font-mono font-bold text-emerald-400">
+                                        <span x-text="formatCurrency(product.sellPrice)"></span>
+                                    </td>
+                                    <td class="py-3.5 px-4 font-bold">
+                                        <span class="text-teal-400" x-text="formatCurrency(product.sellPrice - product.buyPrice)"></span>
+                                        <div class="text-[10px] text-emerald-500 font-semibold" x-text="calculateMargin(product) + '% margen'"></div>
+                                    </td>
+                                    <td class="py-3.5 px-4">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="font-bold text-sm" x-text="product.stock"></span>
+                                            <span x-show="product.stock <= product.minStock" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                                BAJO
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="py-3.5 px-4 text-right space-x-1">
+                                        <button @click="openModalProduct(product)" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+                                            <i class="fa-solid fa-pen-to-square"></i>
+                                        </button>
+                                        <button @click="deleteProduct(product.id)" class="p-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 transition">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="filteredProducts.length === 0">
+                                <tr>
+                                    <td colspan="7" class="py-8 text-center text-slate-500">
+                                        <i class="fa-solid fa-box-open text-3xl mb-2 block"></i>
+                                        <span>No hay productos registrados en este filtro</span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PESTAÑA 3: VENDER ==================== -->
+        <div x-show="currentTab === 'sales'" x-cloak class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Catálogo de Venta -->
+            <div class="lg:col-span-2 space-y-4">
+                <div class="bg-slate-800/40 p-4 rounded-2xl border border-slate-800">
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+                        <input type="text" x-model="saleSearch" placeholder="Buscar producto para cobro rápido..." 
+                               class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto custom-scroll pr-1">
+                    <template x-for="product in saleProductsList" :key="product.id">
+                        <div class="bg-slate-800/40 border border-slate-800 p-4 rounded-2xl hover:border-slate-700 transition flex flex-col justify-between">
+                            <div>
+                                <div class="flex justify-between items-start">
+                                    <h4 class="font-bold text-white text-sm" x-text="product.name"></h4>
+                                    <span class="text-[10px] px-2 py-0.5 rounded font-bold" 
+                                          :class="product.stock > product.minStock ? 'bg-slate-800 text-slate-300' : 'bg-amber-500/20 text-amber-400'">
+                                        Stock: <span x-text="product.stock"></span>
+                                    </span>
+                                </div>
+                                <p class="text-[10px] text-slate-500 mt-1" x-text="product.category || 'General'"></p>
+                            </div>
+                            <div class="mt-4 flex items-center justify-between border-t border-slate-800/60 pt-3">
+                                <div>
+                                    <span class="text-xs font-bold text-emerald-400 font-mono" x-text="formatCurrency(product.sellPrice)"></span>
+                                    <span class="text-[10px] text-slate-500 block" x-text="'/' + product.unitType"></span>
+                                </div>
+                                <button @click="addToCart(product)" 
+                                        :disabled="product.stock <= 0"
+                                        class="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition">
+                                    <i class="fa-solid fa-plus text-[10px]"></i>
+                                    <span>Agregar</span>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Carrito de Compras / Ticket de Cobro -->
+            <div class="bg-slate-800/40 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between h-[550px]">
+                <div>
+                    <h3 class="font-bold text-white text-base mb-4 flex items-center space-x-2 border-b border-slate-800 pb-3">
+                        <i class="fa-solid fa-cart-shopping text-emerald-400"></i>
+                        <span>Ticket de Venta</span>
+                    </h3>
+
+                    <div class="space-y-3 overflow-y-auto max-h-[300px] custom-scroll pr-1">
+                        <template x-for="(item, index) in cart" :key="item.id">
+                            <div class="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                                <div class="flex-1 pr-2">
+                                    <h5 class="text-xs font-bold text-white" x-text="item.name"></h5>
+                                    <p class="text-[10px] text-emerald-400 font-mono" x-text="formatCurrency(item.sellPrice) + ' c/u'"></p>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="flex items-center border border-slate-700 rounded-lg overflow-hidden bg-slate-800">
+                                        <button @click="updateCartQty(index, -1)" class="px-2 py-0.5 text-xs text-slate-400 hover:text-white">-</button>
+                                        <span class="px-2 py-0.5 text-xs font-bold text-white font-mono" x-text="item.qty"></span>
+                                        <button @click="updateCartQty(index, 1)" class="px-2 py-0.5 text-xs text-slate-400 hover:text-white">+</button>
+                                    </div>
+                                    <button @click="removeFromCart(index)" class="text-rose-400 hover:text-rose-300 text-xs p-1">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="cart.length === 0">
+                            <div class="text-center py-12 text-slate-500">
+                                <i class="fa-solid fa-basket-shopping text-3xl mb-2 block"></i>
+                                <span class="text-xs">El carrito está vacío</span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Totales y Botón de Cobro -->
+                <div class="border-t border-slate-800 pt-4 space-y-3">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Items Totales:</span>
+                        <span class="font-bold text-slate-200" x-text="cartTotalItems"></span>
+                    </div>
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Ganancia Estimada:</span>
+                        <span class="font-bold text-teal-400 font-mono" x-text="formatCurrency(cartTotalProfit)"></span>
+                    </div>
+                    <div class="flex justify-between text-base font-extrabold text-white border-t border-slate-800 pt-2">
+                        <span>Total Venta:</span>
+                        <span class="text-emerald-400 font-mono" x-text="formatCurrency(cartTotalAmount)"></span>
+                    </div>
+
+                    <button @click="processSale()" 
+                            :disabled="cart.length === 0"
+                            class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl shadow-lg transition text-xs uppercase tracking-wider flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-check-circle"></i>
+                        <span>Completar Venta</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PESTAÑA 4: HISTORIAL ==================== -->
+        <div x-show="currentTab === 'history'" x-cloak class="space-y-4">
+            <div class="bg-slate-800/40 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h3 class="text-base font-bold text-white">Historial de Operaciones</h3>
+                <div class="relative w-full sm:w-64">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-500 text-xs"></i>
+                    <input type="text" x-model="historySearch" placeholder="Buscar en historial..." 
+                           class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+            </div>
+
+            <div class="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden">
+                <div class="overflow-x-auto custom-scroll">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                            <tr>
+                                <th class="py-3.5 px-4 font-bold">Fecha / ID</th>
+                                <th class="py-3.5 px-4 font-bold">Detalle de Productos</th>
+                                <th class="py-3.5 px-4 font-bold">Monto Total</th>
+                                <th class="py-3.5 px-4 font-bold">Ganancia Obtenida</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <template x-for="sale in filteredSales" :key="sale.id">
+                                <tr class="hover:bg-slate-800/50 transition">
+                                    <td class="py-3.5 px-4">
+                                        <div class="font-bold text-white" x-text="formatDate(sale.timestamp)"></div>
+                                        <div class="text-[10px] text-slate-500 font-mono" x-text="sale.id"></div>
+                                    </td>
+                                    <td class="py-3.5 px-4">
+                                        <ul class="space-y-1">
+                                            <template x-for="item in sale.items" :key="item.id">
+                                                <li class="text-[11px]">
+                                                    <span class="font-semibold text-slate-200" x-text="item.name"></span>
+                                                    <span class="text-slate-500" x-text="'x' + item.qty"></span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </td>
+                                    <td class="py-3.5 px-4 font-mono font-bold text-emerald-400" x-text="formatCurrency(sale.total)"></td>
+                                    <td class="py-3.5 px-4 font-mono font-bold text-teal-400" x-text="formatCurrency(sale.profit)"></td>
+                                </tr>
+                            </template>
+                            <template x-if="filteredSales.length === 0">
+                                <tr>
+                                    <td colspan="4" class="py-8 text-center text-slate-500">
+                                        <i class="fa-solid fa-clock-rotate-left text-3xl mb-2 block"></i>
+                                        <span>No hay registros en el historial</span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PESTAÑA 5: REPORTES ==================== -->
+        <div x-show="currentTab === 'reports'" x-cloak class="space-y-6">
+            <div class="bg-slate-800/40 p-5 rounded-2xl border border-slate-800">
+                <h3 class="text-lg font-bold text-white mb-1">Análisis de Rentabilidad y Retorno</h3>
+                <p class="text-xs text-slate-400">Resumen detallado del rendimiento financiero de tu negocio</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-slate-800/60 p-5 rounded-2xl border border-slate-700/60">
+                    <p class="text-xs font-bold text-slate-400 uppercase">Margen de Ganancia Promedio</p>
+                    <h4 class="text-2xl font-black text-emerald-400 mt-2" x-text="averageMargin + '%'"></h4>
+                    <p class="text-[11px] text-slate-500 mt-1">Rentabilidad global sobre precios de lista</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-5 rounded-2xl border border-slate-700/60">
+                    <p class="text-xs font-bold text-slate-400 uppercase">Ticket Promedio por Venta</p>
+                    <h4 class="text-2xl font-black text-teal-300 mt-2" x-text="formatCurrency(averageTicket)"></h4>
+                    <p class="text-[11px] text-slate-500 mt-1">Ingreso promedio generado por transacción</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-5 rounded-2xl border border-slate-700/60">
+                    <p class="text-xs font-bold text-slate-400 uppercase">Total Transacciones</p>
+                    <h4 class="text-2xl font-black text-indigo-400 mt-2" x-text="sales.length"></h4>
+                    <p class="text-[11px] text-slate-500 mt-1">Ventas procesadas hasta el momento</p>
+                </div>
+            </div>
+
+            <!-- Tabla de Top Productos más Rentables -->
+            <div class="bg-slate-800/40 border border-slate-800 p-5 rounded-2xl space-y-3">
+                <h4 class="font-bold text-sm text-slate-200">Productos con Mayor Utilidad por Unidad</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/80 text-slate-400 uppercase text-[10px]">
+                            <tr>
+                                <th class="py-2.5 px-3">Producto</th>
+                                <th class="py-2.5 px-3">Modo</th>
+                                <th class="py-2.5 px-3">Costo</th>
+                                <th class="py-2.5 px-3">Precio Venta</th>
+                                <th class="py-2.5 px-3">Ganancia / Unidad</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800">
+                            <template x-for="p in topProfitProducts" :key="p.id">
+                                <tr>
+                                    <td class="py-2.5 px-3 font-semibold text-white" x-text="p.name"></td>
+                                    <td class="py-2.5 px-3 text-slate-400" x-text="p.unitType"></td>
+                                    <td class="py-2.5 px-3 font-mono" x-text="formatCurrency(p.buyPrice)"></td>
+                                    <td class="py-2.5 px-3 font-mono text-emerald-400" x-text="formatCurrency(p.sellPrice)"></td>
+                                    <td class="py-2.5 px-3 font-mono font-bold text-teal-300" x-text="formatCurrency(p.sellPrice - p.buyPrice)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal: Formulario Agregar/Editar Producto -->
+    <div x-show="showProductModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative"
+             @click.away="showProductModal = false">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white" x-text="productForm.id ? 'Editar Producto' : 'Nuevo Producto'"></h3>
+                <button @click="showProductModal = false" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form @submit.prevent="saveProduct()" class="space-y-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre del Producto</label>
+                    <input type="text" x-model="productForm.name" required placeholder="Ej. Galletas Marinela / Refresco 600ml" 
+                           class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Categoría</label>
+                        <input type="text" x-model="productForm.category" placeholder="Ej. Abarrotes, Bebidas" 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Tipo de Venta</label>
+                        <select x-model="productForm.unitType" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                            <option value="pieza">Por Pieza</option>
+                            <option value="caja">Por Caja</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Lógica de División Automática para Cajas -->
+                <template x-if="productForm.unitType === 'caja'">
+                    <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+                        <label class="block font-semibold text-slate-300">Piezas que contiene la Caja</label>
+                        <input type="number" min="1" x-model.number="productForm.itemsPerBox" required 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white">
+                        <p class="text-[10px] text-teal-400" x-show="productForm.buyPrice > 0 && productForm.itemsPerBox > 0">
+                            Costo estimado por unidad individual: <span class="font-bold font-mono" x-text="formatCurrency(productForm.buyPrice / productForm.itemsPerBox)"></span>
+                        </p>
+                    </div>
+                </template>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Costo Compra (Inversión)</label>
+                        <input type="number" step="0.01" min="0" x-model.number="productForm.buyPrice" required 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Precio de Venta</label>
+                        <input type="number" step="0.01" min="0" x-model.number="productForm.sellPrice" required 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Stock Actual</label>
+                        <input type="number" min="0" x-model.number="productForm.stock" required 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Stock Mínimo (Alerta)</label>
+                        <input type="number" min="0" x-model.number="productForm.minStock" required 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-2 border-t border-slate-800 pt-3">
+                    <button type="button" @click="showProductModal = false" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">Guardar Producto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================================== -->
+    <!-- SECCIÓN 3: CÓDIGO Y NUBE (JAVASCRIPT / FIREBASE)               -->
+    <!-- ============================================================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Configuración de Firebase con fallback
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "demo-api-key",
+                authDomain: "demo-app.firebaseapp.com",
+                projectId: "demo-app",
+                storageBucket: "demo-app.appspot.com",
+                messagingSenderId: "123456789",
+                appId: "1:123456789:web:demo"
+              };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-inventory-app';
+
+        // Definición de la lógica Alpine JS
+        window.inventoryApp = function() {
+            return {
+                currentTab: 'dashboard',
+                user: null,
+                db: null,
+                auth: null,
+                products: [],
+                sales: [],
+                cart: [],
+                toasts: [],
+                
+                searchQuery: '',
+                saleSearch: '',
+                historySearch: '',
+                filterLowStock: false,
+                showProductModal: false,
+
+                productForm: {
+                    id: null,
+                    name: '',
+                    category: 'General',
+                    unitType: 'pieza',
+                    itemsPerBox: 12,
+                    buyPrice: 0,
+                    sellPrice: 0,
+                    stock: 10,
+                    minStock: 3
+                },
+
+                salesChartObj: null,
+                categoryChartObj: null,
+
+                initFirebaseApp() {
+                    try {
+                        const app = initializeApp(firebaseConfig);
+                        this.auth = getAuth(app);
+                        this.db = getFirestore(app);
+
+                        const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                        if (authToken) {
+                            signInWithCustomToken(this.auth, authToken).catch(() => signInAnonymously(this.auth));
+                        } else {
+                            signInAnonymously(this.auth);
+                        }
+
+                        onAuthStateChanged(this.auth, (currentUser) => {
+                            this.user = currentUser;
+                            if (currentUser) {
+                                this.listenToCollections();
+                            }
+                        });
+
+                        this.$watch('products', () => this.updateCharts());
+                        this.$watch('sales', () => this.updateCharts());
+                    } catch (e) {
+                        console.warn("Modo fallback activado", e);
+                    }
+                },
+
+                listenToCollections() {
+                    if (!this.user) return;
+
+                    const productsRef = collection(this.db, 'artifacts', appId, 'public', 'data', 'products');
+                    const salesRef = collection(this.db, 'artifacts', appId, 'public', 'data', 'sales');
+
+                    onSnapshot(productsRef, (snapshot) => {
+                        this.products = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    }, (err) => console.error("Error sincronizando productos:", err));
+
+                    onSnapshot(salesRef, (snapshot) => {
+                        this.sales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                            .sort((a,b) => b.timestamp - a.timestamp);
+                    }, (err) => console.error("Error sincronizando ventas:", err));
+                },
+
+                get totalInvestment() {
+                    return this.products.reduce((acc, p) => acc + (p.buyPrice * p.stock), 0);
+                },
+
+                get totalStockValue() {
+                    return this.products.reduce((acc, p) => acc + (p.sellPrice * p.stock), 0);
+                },
+
+                get totalRealizedProfit() {
+                    return this.sales.reduce((acc, s) => acc + (s.profit || 0), 0);
+                },
+
+                get lowStockProducts() {
+                    return this.products.filter(p => p.stock <= p.minStock);
+                },
+
+                get filteredProducts() {
+                    return this.products.filter(p => {
+                        const matchesSearch = p.name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                                              (p.category && p.category.toLowerCase().includes(this.searchQuery.toLowerCase()));
+                        const matchesStock = this.filterLowStock ? p.stock <= p.minStock : true;
+                        return matchesSearch && matchesStock;
+                    });
+                },
+
+                get saleProductsList() {
+                    return this.products.filter(p => p.name.toLowerCase().includes(this.saleSearch.toLowerCase()));
+                },
+
+                get filteredSales() {
+                    return this.sales.filter(s => s.id.toLowerCase().includes(this.historySearch.toLowerCase()));
+                },
+
+                get cartTotalAmount() {
+                    return this.cart.reduce((acc, item) => acc + (item.sellPrice * item.qty), 0);
+                },
+
+                get cartTotalProfit() {
+                    return this.cart.reduce((acc, item) => {
+                        const cost = item.buyPrice;
+                        return acc + ((item.sellPrice - cost) * item.qty);
+                    }, 0);
+                },
+
+                get cartTotalItems() {
+                    return this.cart.reduce((acc, item) => acc + item.qty, 0);
+                },
+
+                get averageMargin() {
+                    if (this.products.length === 0) return 0;
+                    const totalMargins = this.products.reduce((acc, p) => acc + parseFloat(this.calculateMargin(p)), 0);
+                    return (totalMargins / this.products.length).toFixed(1);
+                },
+
+                get averageTicket() {
+                    if (this.sales.length === 0) return 0;
+                    const totalSales = this.sales.reduce((acc, s) => acc + (s.total || 0), 0);
+                    return totalSales / this.sales.length;
+                },
+
+                get topProfitProducts() {
+                    return [...this.products]
+                        .sort((a, b) => (b.sellPrice - b.buyPrice) - (a.sellPrice - a.buyPrice))
+                        .slice(0, 5);
+                },
+
+                openModalProduct(product = null) {
+                    if (product) {
+                        this.productForm = { ...product };
+                    } else {
+                        this.productForm = {
+                            id: null,
+                            name: '',
+                            category: 'General',
+                            unitType: 'pieza',
+                            itemsPerBox: 12,
+                            buyPrice: 0,
+                            sellPrice: 0,
+                            stock: 10,
+                            minStock: 3
+                        };
+                    }
+                    this.showProductModal = true;
+                },
+
+                async saveProduct() {
+                    if (!this.user) return;
+                    try {
+                        const docId = this.productForm.id || 'prod_' + Date.now();
+                        const pRef = doc(this.db, 'artifacts', appId, 'public', 'data', 'products', docId);
+                        
+                        await setDoc(pRef, {
+                            name: this.productForm.name,
+                            category: this.productForm.category,
+                            unitType: this.productForm.unitType,
+                            itemsPerBox: this.productForm.unitType === 'caja' ? Number(this.productForm.itemsPerBox) : 1,
+                            buyPrice: Number(this.productForm.buyPrice),
+                            sellPrice: Number(this.productForm.sellPrice),
+                            stock: Number(this.productForm.stock),
+                            minStock: Number(this.productForm.minStock),
+                            updatedAt: Date.now()
+                        }, { merge: true });
+
+                        this.showNotification('Producto guardado correctamente', 'success');
+                        this.showProductModal = false;
+                    } catch (e) {
+                        this.showNotification('Error al guardar producto', 'danger');
+                    }
+                },
+
+                async deleteProduct(id) {
+                    if (!this.user) return;
+                    try {
+                        const pRef = doc(this.db, 'artifacts', appId, 'public', 'data', 'products', id);
+                        await deleteDoc(pRef);
+                        this.showNotification('Producto eliminado', 'info');
+                    } catch(e) {
+                        this.showNotification('No se pudo eliminar', 'danger');
+                    }
+                },
+
+                addToCart(product) {
+                    const existing = this.cart.find(i => i.id === product.id);
+                    if (existing) {
+                        if (existing.qty + 1 > product.stock) {
+                            this.showNotification('Stock máximo alcanzado', 'warning');
+                            return;
+                        }
+                        existing.qty++;
+                    } else {
+                        this.cart.push({ ...product, qty: 1 });
+                    }
+                },
+
+                updateCartQty(index, delta) {
+                    const item = this.cart[index];
+                    const newQty = item.qty + delta;
+                    if (newQty <= 0) {
+                        this.removeFromCart(index);
+                    } else if (newQty <= item.stock) {
+                        item.qty = newQty;
+                    } else {
+                        this.showNotification('Excede el stock disponible', 'warning');
+                    }
+                },
+
+                removeFromCart(index) {
+                    this.cart.splice(index, 1);
+                },
+
+                async processSale() {
+                    if (this.cart.length === 0 || !this.user) return;
+
+                    try {
+                        const saleId = 'sale_' + Date.now();
+                        const saleRef = doc(this.db, 'artifacts', appId, 'public', 'data', 'sales', saleId);
+
+                        await setDoc(saleRef, {
+                            timestamp: Date.now(),
+                            items: this.cart.map(i => ({ id: i.id, name: i.name, qty: i.qty, sellPrice: i.sellPrice, buyPrice: i.buyPrice })),
+                            total: this.cartTotalAmount,
+                            profit: this.cartTotalProfit
+                        });
+
+                        for (const item of this.cart) {
+                            const pRef = doc(this.db, 'artifacts', appId, 'public', 'data', 'products', item.id);
+                            await setDoc(pRef, { stock: item.stock - item.qty }, { merge: true });
+                        }
+
+                        this.showNotification('¡Venta completada!', 'success');
+                        this.cart = [];
+                    } catch(e) {
+                        this.showNotification('Error al procesar la venta', 'danger');
+                    }
+                },
+
+                formatCurrency(val) {
+                    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(val || 0);
+                },
+
+                formatDate(ts) {
+                    return new Date(ts).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+                },
+
+                calculateMargin(p) {
+                    if (!p.sellPrice || p.sellPrice === 0) return 0;
+                    const profit = p.sellPrice - p.buyPrice;
+                    return ((profit / p.sellPrice) * 100).toFixed(1);
+                },
+
+                showNotification(message, type = 'info') {
+                    const toast = { id: Date.now(), message, type, show: true };
+                    this.toasts.push(toast);
+                    setTimeout(() => { toast.show = false; }, 3500);
+                },
+
+                updateCharts() {
+                    this.$nextTick(() => {
+                        this.renderSalesChart();
+                        this.renderCategoryChart();
+                    });
+                },
+
+                renderSalesChart() {
+                    const ctx = document.getElementById('salesChart');
+                    if (!ctx) return;
+
+                    if (this.salesChartObj) this.salesChartObj.destroy();
+
+                    const recentSales = [...this.sales].slice(0, 7).reverse();
+                    
+                    this.salesChartObj = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: recentSales.map(s => this.formatDate(s.timestamp)),
+                            datasets: [
+                                {
+                                    label: 'Ingreso Total',
+                                    data: recentSales.map(s => s.total),
+                                    backgroundColor: '#10b981'
+                                },
+                                {
+                                    label: 'Ganancia Neta',
+                                    data: recentSales.map(s => s.profit),
+                                    backgroundColor: '#14b8a6'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { labels: { color: '#94a3b8' } } },
+                            scales: {
+                                x: { ticks: { color: '#64748b' }, grid: { color: '#334155' } },
+                                y: { ticks: { color: '#64748b' }, grid: { color: '#334155' } }
+                            }
+                        }
+                    });
+                },
+
+                renderCategoryChart() {
+                    const ctx = document.getElementById('categoryChart');
+                    if (!ctx) return;
+
+                    if (this.categoryChartObj) this.categoryChartObj.destroy();
+
+                    const categories = {};
+                    this.products.forEach(p => {
+                        const cat = p.category || 'General';
+                        categories[cat] = (categories[cat] || 0) + p.stock;
+                    });
+
+                    this.categoryChartObj = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: Object.keys(categories),
+                            datasets: [{
+                                data: Object.values(categories),
+                                backgroundColor: ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { labels: { color: '#94a3b8' } } }
+                        }
+                    });
+                }
+            };
+        };
+    </script>
+</body>
+</html>
